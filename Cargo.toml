@@ -12,6 +12,11 @@ repository = "https://github.com/0xor0ne/qscan"
 keywords = ["scanning", "network"]
 categories = ["network-programming"]
 
+exclude = [
+    "scripts/*",
+    "Dockerfile",
+]
+
 [profile.release]
 strip = "symbols"
 panic = "abort"
