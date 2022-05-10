@@ -1,0 +1,21 @@
+[package]
+name = "qscan"
+version = "0.1.0"
+authors = ["0xor0ne"]
+edition = "2021"
+homepage = "https://github.com/0xor0ne/qscan"
+repository = "https://github.com/0xor0ne/qscan"
+
+[profile.release]
+strip = "symbols"
+panic = "abort"
+
+[[bin]]
+name = "tcp_cs"
+path = "bin/tcp_cs.rs"
+
+[dependencies]
+async-std = "1.11.0"
+cidr-utils = "0.5.6"
+futures = "0.3"
+itertools = "0.10.3"
