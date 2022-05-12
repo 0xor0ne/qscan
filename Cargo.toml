@@ -9,7 +9,7 @@ license = "GPL-3.0-or-later"
 edition = "2021"
 homepage = "https://github.com/0xor0ne/qscan"
 repository = "https://github.com/0xor0ne/qscan"
-keywords = ["scanning", "network"]
+keywords = ["scanning", "network", "async"]
 categories = ["network-programming"]
 
 exclude = [
