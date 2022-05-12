@@ -19,9 +19,4 @@
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ROOT_DIR=${SCRIPT_DIR}/..
 
-if [ $# -ne 2 ] ; then
-  echo "Usage: $0 \"ips\" \"ports\""
-  exit 1
-fi
-
-docker run --rm -it qscan "$1" "$2"
+docker run --rm -it 0xor0ne/qscan $@

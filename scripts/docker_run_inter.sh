@@ -19,4 +19,4 @@
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ROOT_DIR=${SCRIPT_DIR}/..
 
-docker run --rm -it --entrypoint /bin/bash qscan
+docker run --rm -it --entrypoint /bin/bash 0xor0ne/qscan

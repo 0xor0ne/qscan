@@ -21,7 +21,16 @@ ROOT_DIR=${SCRIPT_DIR}/..
 
 DOCKFILE=${ROOT_DIR}/Dockerfile
 
-docker build -f ${DOCKFILE} -t qscan \
+pushd .
+cd ${ROOT_DIR}
+cargo clean --target-dir target/x86_64-unknown-linux-gnu
+RUSTFLAGS='-C target-feature=+crt-static' cargo build --release \
+  --features build-binary \
+  --bin tcp_cs \
+  --target x86_64-unknown-linux-gnu
+popd
+
+docker build -f ${DOCKFILE} -t 0xor0ne/qscan \
   --build-arg user=qscan \
   --build-arg root_password=qscan-passwd \
   ${ROOT_DIR}

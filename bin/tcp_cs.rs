@@ -15,17 +15,46 @@
 //
 use qscan::QScanner;
 
+use clap::Parser;
 use futures::executor::block_on;
+
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    #[clap(long, help = "IP to scan. E.g., '8.8.8.8', '192.168.1.0/24'")]
+    ips: String,
+
+    #[clap(long, help = "Ports to scan for each ip. E.g., '80', '1-1024'")]
+    ports: String,
+
+    #[clap(long, default_value_t = 2500, help = "Parallel scan")]
+    batch: u16,
+
+    #[clap(long, default_value_t = 2500, help = "Timeout in ms")]
+    timeout: u64,
+
+    #[clap(long, default_value_t = 2, help = "#re-tries")]
+    tries: u8,
+
+    #[clap(long, help = "Do not print open ports as soon as they are found")]
+    nortprint: bool,
+}
 
 /// Simple async tcp connect scanner
 pub fn main() {
-    let addresses = std::env::args().nth(1).expect("No addresses given");
-    let ports = std::env::args().nth(2).expect("No ports given");
+    let args = Args::parse();
+    let addresses = args.ips;
+    let ports = args.ports;
+    let batch = args.batch;
+    let timeout = args.timeout;
+    let tries = args.tries;
 
-    let scanner = QScanner::new(&addresses, &ports, 1000, 1000, 1);
-    let res = block_on(scanner.scan_tcp_connect());
+    let scanner = QScanner::new(&addresses, &ports, batch, timeout, tries);
+    let res = block_on(scanner.scan_tcp_connect(!args.nortprint));
 
-    for sa in &res {
-        println!("{}", sa);
+    if args.nortprint {
+        for sa in &res {
+            println!("{}", sa);
+        }
     }
 }

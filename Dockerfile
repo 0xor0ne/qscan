@@ -25,10 +25,6 @@ ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt-get update -y
 RUN apt-get install -y --no-install-recommends \
-      build-essential \
-      sudo \
-      curl \
-      ca-certificates \
       locales
 
 # Enable UTF-8 locale
@@ -45,24 +41,12 @@ RUN useradd -ms /bin/bash ${user} && \
 # Add new user to sudoers file without password
 RUN echo "${user} ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
+COPY target/x86_64-unknown-linux-gnu/release/tcp_cs /bin/tcp_cs
+
 USER ${user}
 WORKDIR /home/${user}/
 ENV LC_ALL en_US.UTF-8
 ENV TERM xterm-256color
-
-# Install Rust
-RUN curl https://sh.rustup.rs -sSf | \
-  sh -s -- --default-toolchain stable -y
-ENV PATH=/home/${user}/.cargo/bin:$PATH
-
-RUN mkdir qscan
-COPY Cargo.lock qscan/Cargo.lock
-COPY Cargo.toml qscan/Cargo.toml
-ADD bin qscan/bin
-ADD src qscan/src
-RUN cd qscan && cargo build --release && \
-  sudo cp target/release/tcp_cs /bin/ && \
-  cd .. && sudo rm -rf qscan
 
 ENTRYPOINT ["/bin/tcp_cs"]
 

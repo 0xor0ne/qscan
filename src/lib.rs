@@ -126,6 +126,10 @@ impl QScanner {
 
     /// Async TCP connect scan
     ///
+    /// # Args
+    ///
+    /// * `rt_print` - Print open ports as soon as they are found
+    ///
     /// # Return
     ///
     /// A vector of [SocketAddr] for each open port found.
@@ -139,7 +143,7 @@ impl QScanner {
     /// let res = block_on(scanner1.scan_tcp_connect());
     /// ```
     ///
-    pub async fn scan_tcp_connect(&self) -> Vec<SocketAddr> {
+    pub async fn scan_tcp_connect(&self, rt_print: bool) -> Vec<SocketAddr> {
         let mut open_soc: Vec<SocketAddr> = Vec::new();
         let mut sock_it: sockiter::SockIter = sockiter::SockIter::new(&self.ips, &self.ports);
         let mut ftrs = FuturesUnordered::new();
@@ -158,6 +162,10 @@ impl QScanner {
             }
 
             if let Ok(socket) = result {
+                if rt_print {
+                    println!("{}", socket);
+                }
+
                 open_soc.push(socket);
             }
         }
