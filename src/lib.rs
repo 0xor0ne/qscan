@@ -15,15 +15,17 @@
 //
 
 use std::net::IpAddr;
-use std::net::Shutdown;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 
 use std::num::NonZeroU8;
 use std::time::Duration;
 
-use async_std::io;
-use async_std::net::TcpStream;
+use tokio::io;
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpStream;
+use tokio::time::error::Elapsed;
+use tokio::time::timeout;
 
 use cidr_utils::cidr::IpCidr;
 
@@ -138,9 +140,9 @@ impl QScanner {
     ///
     /// ```
     /// use qscan::QScanner;
-    /// use futures::executor::block_on;
-    /// let scanner1 = QScanner::new("127.0.0.1", "80", 1000, 1000, 1);
-    /// let res = block_on(scanner1.scan_tcp_connect());
+    /// use tokio::runtime::Runtime;
+    /// let scanner = QScanner::new("127.0.0.1", "80", 1000, 1000, 1);
+    /// let res = Runtime::new().unwrap().block_on(scanner.scan_tcp_connect(true));
     /// ```
     ///
     pub async fn scan_tcp_connect(&self, rt_print: bool) -> Vec<SocketAddr> {
@@ -178,16 +180,11 @@ impl QScanner {
 
         for ntry in 0..tries {
             match self.tcp_connect(socket).await {
-                Ok(x) => {
-                    if let Err(e) = x.shutdown(Shutdown::Both) {
-                        eprintln!("Shutdown error {}", &e);
-                    }
-
-                    //println!("Open {}", socket.to_string());
-
+                Ok(Ok(mut x)) => {
+                    x.shutdown().await?;
                     return Ok(socket);
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     let mut err_str = e.to_string();
 
                     if err_str.to_lowercase().contains("too many open files") {
@@ -200,14 +197,23 @@ impl QScanner {
                         return Err(io::Error::new(io::ErrorKind::Other, err_str));
                     }
                 }
+                Err(e) => {
+                    let mut err_str = e.to_string();
+
+                    if ntry == tries - 1 {
+                        err_str.push(' ');
+                        err_str.push_str(&socket.ip().to_string());
+                        return Err(io::Error::new(io::ErrorKind::Other, err_str));
+                    }
+                }
             };
         }
         unreachable!();
     }
 
-    async fn tcp_connect(&self, socker: SocketAddr) -> io::Result<TcpStream> {
-        let stream = io::timeout(self.to, async move { TcpStream::connect(socker).await }).await?;
-        Ok(stream)
+    async fn tcp_connect(&self, socket: SocketAddr) -> Result<io::Result<TcpStream>, Elapsed> {
+        // See https://stackoverflow.com/questions/30022084/how-do-i-set-connect-timeout-on-tcpstream
+        timeout(self.to, TcpStream::connect(socket)).await
     }
 }
 
@@ -245,7 +251,7 @@ mod sockiter {
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-    use async_std::task::block_on;
+    use tokio::runtime::Runtime;
 
     #[test]
     fn parse_simple_address() {
@@ -318,7 +324,9 @@ mod tests {
     #[test]
     fn scan_tcp_connect_google_dns() {
         let scanner = super::QScanner::new("8.8.8.8", "53,54,55-60", 5000, 2500, 1);
-        let res = block_on(scanner.scan_tcp_connect());
+        let res = Runtime::new()
+            .unwrap()
+            .block_on(scanner.scan_tcp_connect(true));
         assert_eq!(
             res,
             vec![SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53)]

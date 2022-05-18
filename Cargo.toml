@@ -1,6 +1,6 @@
 [package]
 name = "qscan"
-version = "0.2.0"
+version = "0.3.0"
 description = "Quick async network scan library"
 documentation = "https://docs.rs/qscan"
 readme = "README.md"
@@ -9,7 +9,7 @@ license = "GPL-3.0-or-later"
 edition = "2021"
 homepage = "https://github.com/0xor0ne/qscan"
 repository = "https://github.com/0xor0ne/qscan"
-keywords = ["scanning", "network", "async"]
+keywords = ["scanning", "network", "async", "port"]
 categories = ["network-programming"]
 
 exclude = [
@@ -18,7 +18,7 @@ exclude = [
 ]
 
 [dependencies]
-async-std = "1.11.0"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "io-util"] }
 cidr-utils = "0.5.6"
 futures = "0.3"
 itertools = "0.10.3"
