@@ -1,4 +1,4 @@
-# Quick Network Scanner
+# Quick Network Scanner Library
 
 Rust library for scanning network hosts asynchronously.
 
@@ -18,7 +18,7 @@ Dependencies (`Cargo.toml`):
 
 ```bash
 [dependencies]
-qscan = "0.3.0"
+qscan = "0.3.1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 ```
 
@@ -49,29 +49,32 @@ and used as follow:
 
 ```bash
 cargo build --release --features build-binary --bin tcp_cs
-./target/release/tcp_cs --ips "8.8.8.8" --ports "1-1000"
+./target/release/tcp_cs --targets "8.8.8.8" --ports "1-1000"
+./target/release/tcp_cs --targets "www.google.com" --ports "1-1000"
 ```
 
 See the help message for all the available options:
 
 ```bash
 ./target/debug/tcp_cs -h
-qscan 0.3.0
+qscan 0.3.1
 0xor0ne
 Quick async network scan library
 
 USAGE:
-    tcp_cs [OPTIONS] --ips <IPS> --ports <PORTS>
+    tcp_cs [OPTIONS] --targets <TARGETS> --ports <PORTS>
 
 OPTIONS:
         --batch <BATCH>        Parallel scan [default: 5000]
     -h, --help                 Print help information
-        --ips <IPS>            IP to scan. E.g., '8.8.8.8', '192.168.1.0/24'
         --nortprint            Do not print open ports as soon as they are found
         --ports <PORTS>        Ports to scan for each ip. E.g., '80', '1-1024'
+        --targets <TARGETS>    Target to scan (comma separated). E.g., '8.8.8.8', '192.168.1.0/24',
+                               'www.google.com'
         --timeout <TIMEOUT>    Timeout in ms [default: 1000]
         --tries <TRIES>        #re-tries [default: 1]
     -V, --version              Print version information
+
 ```
 
 ## Docker Image
@@ -90,13 +93,13 @@ Assuming Docker is installed on your machine and configured to run without sudo
 Then you can use the `0xor0ne/qscan` Docker image for running the scanner:
 
 ```bash
-docker run --rm -it 0xor0ne/qscan --ips "8.8.8.8" --ports "1-1024"
+docker run --rm -it 0xor0ne/qscan --targets "8.8.8.8" --ports "1-1024"
 ```
 
 the same thing can be done using the helper script:
 
 ```bash
-./scripts/docker_run_scan.sh --ips "8.8.8.8" --ports "1-1024"
+./scripts/docker_run_scan.sh --targets "8.8.8.8" --ports "1-1024"
 ```
 
 ### Docker Image from hub.docker.com
@@ -105,7 +108,7 @@ Alternatively, it is possible to download and run a precompiled image from
 hub.docker.com:
 
 ```bash
-docker run --rm 0xor0ne/qscan:latest --ips "8.8.8.8" --ports "1-1024"
+docker run --rm 0xor0ne/qscan:latest --targets "8.8.8.8" --ports "1-1024"
 ```
 
 ### Build Docker Image on MacOS (Experimental)

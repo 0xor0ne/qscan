@@ -21,8 +21,11 @@ use tokio::runtime::Runtime;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    #[clap(long, help = "IP to scan. E.g., '8.8.8.8', '192.168.1.0/24'")]
-    ips: String,
+    #[clap(
+        long,
+        help = "Target to scan (comma separated). E.g., '8.8.8.8', '192.168.1.0/24', 'www.google.com'"
+    )]
+    targets: String,
 
     #[clap(long, help = "Ports to scan for each ip. E.g., '80', '1-1024'")]
     ports: String,
@@ -43,7 +46,7 @@ struct Args {
 /// Simple async tcp connect scanner
 pub fn main() {
     let args = Args::parse();
-    let addresses = args.ips;
+    let addresses = args.targets;
     let ports = args.ports;
     let batch = args.batch;
     let timeout = args.timeout;

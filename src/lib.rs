@@ -31,6 +31,11 @@ use cidr_utils::cidr::IpCidr;
 
 use futures::stream::{FuturesUnordered, StreamExt};
 
+use trust_dns_resolver::{
+    config::{ResolverConfig, ResolverOpts},
+    Resolver,
+};
+
 /// Simple async network scanner
 #[derive(Debug)]
 pub struct QScanner {
@@ -99,11 +104,13 @@ impl QScanner {
     /// E.g., "1.2.3.4", "1.2.3.4,8.8.8.8", 192.168.1.0/24"
     fn addresses_parse(addresses: &str) -> Vec<IpAddr> {
         let mut ips: Vec<IpAddr> = Vec::new();
+        let alt_resolver =
+            Resolver::new(ResolverConfig::cloudflare_tls(), ResolverOpts::default()).unwrap();
 
         let addrs: String = addresses.chars().filter(|c| !c.is_whitespace()).collect();
 
         for addr in addrs.split(",") {
-            let parsed_addr = Self::address_parse(addr);
+            let parsed_addr = Self::address_parse(addr, &alt_resolver);
 
             if !parsed_addr.is_empty() {
                 ips.extend(parsed_addr);
@@ -113,7 +120,7 @@ impl QScanner {
         ips
     }
 
-    fn address_parse(addr: &str) -> Vec<IpAddr> {
+    fn address_parse(addr: &str, resolver: &Resolver) -> Vec<IpAddr> {
         IpCidr::from_str(&addr)
             .map(|cidr| cidr.iter().collect())
             .ok()
@@ -123,7 +130,21 @@ impl QScanner {
                     .ok()
                     .map(|mut iter| vec![iter.next().unwrap().ip()])
             })
-            .unwrap()
+            .unwrap_or_else(|| Self::domain_name_resolve_to_ip(addr, resolver))
+    }
+
+    fn domain_name_resolve_to_ip(source: &str, alt_resolver: &Resolver) -> Vec<IpAddr> {
+        let mut ips: Vec<IpAddr> = Vec::new();
+
+        if let Ok(addrs) = source.to_socket_addrs() {
+            for ip in addrs {
+                ips.push(ip.ip());
+            }
+        } else if let Ok(addrs) = alt_resolver.lookup_ip(source) {
+            ips.extend(addrs.iter());
+        }
+
+        ips
     }
 
     /// Async TCP connect scan
@@ -250,6 +271,10 @@ mod sockiter {
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use trust_dns_resolver::{
+        config::{ResolverConfig, ResolverOpts},
+        Resolver,
+    };
 
     use tokio::runtime::Runtime;
 
@@ -331,5 +356,21 @@ mod tests {
             res,
             vec![SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53)]
         );
+    }
+
+    #[test]
+    fn resolve_localhost() {
+        let resolver =
+            Resolver::new(ResolverConfig::cloudflare_tls(), ResolverOpts::default()).unwrap();
+        let res = super::QScanner::domain_name_resolve_to_ip("localhost", &resolver);
+        assert_eq!(res, vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]);
+    }
+
+    #[test]
+    fn resolve_lhost() {
+        let resolver =
+            Resolver::new(ResolverConfig::cloudflare_tls(), ResolverOpts::default()).unwrap();
+        let res = super::QScanner::domain_name_resolve_to_ip("www.google.com", &resolver);
+        assert!(res.len() > 0);
     }
 }
