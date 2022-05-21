@@ -81,7 +81,7 @@ impl QScanner {
         let mut pv: Vec<u16> = Vec::new();
         let ps: String = ports.chars().filter(|c| !c.is_whitespace()).collect();
 
-        for p in ps.split(",") {
+        for p in ps.split(',') {
             let range = p
                 .split('-')
                 .map(str::parse)
@@ -92,7 +92,7 @@ impl QScanner {
                 1 => pv.push(range[0]),
                 2 => pv.extend(range[0]..=range[1]),
                 _ => {
-                    panic!("Invalid Range: {}", format!("{:?}", range));
+                    panic!("Invalid Range: {:?}", range);
                 }
             }
         }
@@ -109,7 +109,7 @@ impl QScanner {
 
         let addrs: String = addresses.chars().filter(|c| !c.is_whitespace()).collect();
 
-        for addr in addrs.split(",") {
+        for addr in addrs.split(',') {
             let parsed_addr = Self::address_parse(addr, &alt_resolver);
 
             if !parsed_addr.is_empty() {
@@ -260,10 +260,7 @@ mod sockiter {
         type Item = SocketAddr;
 
         fn next(&mut self) -> Option<Self::Item> {
-            match self.prod.next() {
-                None => None,
-                Some((port, ip)) => Some(SocketAddr::new(*ip, *port)),
-            }
+            self.prod.next().map(|(port, ip)| SocketAddr::new(*ip, *port))
         }
     }
 }
