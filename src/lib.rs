@@ -18,6 +18,11 @@ use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 
+use std::fs::File;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::path::Path;
+
 use std::num::NonZeroU8;
 use std::time::Duration;
 
@@ -81,7 +86,7 @@ impl QScanner {
         let mut pv: Vec<u16> = Vec::new();
         let ps: String = ports.chars().filter(|c| !c.is_whitespace()).collect();
 
-        for p in ps.split(",") {
+        for p in ps.split(',') {
             let range = p
                 .split('-')
                 .map(str::parse)
@@ -92,7 +97,7 @@ impl QScanner {
                 1 => pv.push(range[0]),
                 2 => pv.extend(range[0]..=range[1]),
                 _ => {
-                    panic!("Invalid Range: {}", format!("{:?}", range));
+                    panic!("Invalid Range: {:?}", range);
                 }
             }
         }
@@ -109,11 +114,24 @@ impl QScanner {
 
         let addrs: String = addresses.chars().filter(|c| !c.is_whitespace()).collect();
 
-        for addr in addrs.split(",") {
+        for addr in addrs.split(',') {
             let parsed_addr = Self::address_parse(addr, &alt_resolver);
 
             if !parsed_addr.is_empty() {
                 ips.extend(parsed_addr);
+            } else {
+                // Check if we have a file to read addresses from
+                let file_path = Path::new(addr);
+                if !file_path.is_file() {
+                    println!("Error: not a file {:?}", addr);
+                    continue;
+                }
+
+                if let Ok(x) = QScanner::read_addresses_from_file(file_path, &alt_resolver) {
+                    ips.extend(x);
+                } else {
+                    println!("Error: unknown target {:?}", addr);
+                }
             }
         }
 
@@ -145,6 +163,26 @@ impl QScanner {
         }
 
         ips
+    }
+
+    // Read ips or fomain name from a file
+    fn read_addresses_from_file(
+        addrs_file_path: &Path,
+        backup_resolver: &Resolver,
+    ) -> Result<Vec<IpAddr>, std::io::Error> {
+        let file = File::open(addrs_file_path)?;
+        let reader = BufReader::new(file);
+        let mut ips: Vec<IpAddr> = Vec::new();
+
+        for (idx, address_line) in reader.lines().enumerate() {
+            if let Ok(address) = address_line {
+                ips.extend(QScanner::address_parse(&address, backup_resolver));
+            } else {
+                println!("Error: Line {} in file is not valid", idx);
+            }
+        }
+
+        Ok(ips)
     }
 
     /// Async TCP connect scan
@@ -260,10 +298,9 @@ mod sockiter {
         type Item = SocketAddr;
 
         fn next(&mut self) -> Option<Self::Item> {
-            match self.prod.next() {
-                None => None,
-                Some((port, ip)) => Some(SocketAddr::new(*ip, *port)),
-            }
+            self.prod
+                .next()
+                .map(|(port, ip)| SocketAddr::new(*ip, *port))
         }
     }
 }

@@ -18,7 +18,7 @@ Dependencies (`Cargo.toml`):
 
 ```bash
 [dependencies]
-qscan = "0.3.1"
+qscan = "0.3.2"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 ```
 
@@ -44,20 +44,18 @@ pub fn main() {
 
 ## tcp_cs
 
-The project provides a simple scanner binary called `tcp_cs` that can be build
+The project provides a simple scanner utility called `tcp_cs` that can be build
 and used as follow:
 
 ```bash
 cargo build --release --features build-binary --bin tcp_cs
-./target/release/tcp_cs --targets "8.8.8.8" --ports "1-1000"
-./target/release/tcp_cs --targets "www.google.com" --ports "1-1000"
 ```
 
 See the help message for all the available options:
 
 ```bash
 ./target/debug/tcp_cs -h
-qscan 0.3.1
+qscan 0.3.2
 0xor0ne
 Quick async network scan library
 
@@ -67,14 +65,33 @@ USAGE:
 OPTIONS:
         --batch <BATCH>        Parallel scan [default: 5000]
     -h, --help                 Print help information
-        --nortprint            Do not print open ports as soon as they are found
-        --ports <PORTS>        Ports to scan for each ip. E.g., '80', '1-1024'
-        --targets <TARGETS>    Target to scan (comma separated). E.g., '8.8.8.8', '192.168.1.0/24',
-                               'www.google.com'
-        --timeout <TIMEOUT>    Timeout in ms [default: 1000]
-        --tries <TRIES>        #re-tries [default: 1]
+        --nortprint            Print open ports at the end of the scan and not as soon as they are
+                               found
+        --ports <PORTS>        Comma separate list of ports (or port ranges) to scan for each
+                               target. E.g., '80', '22,443', '1-1024,8080'
+        --targets <TARGETS>    Comma separated list of targets to scan. A target can be an IP, a set
+                               of IPs in CIDR notation, a domain name or a path to a file containing
+                               one of the previous for each line. E.g., '8.8.8.8', '192.168.1.0/24',
+                               'www.google.com,/tmp/ips.txt'
+        --timeout <TIMEOUT>    Timeout in ms. If the timeout expires the port is considered close
+                               [default: 1500]
+        --tries <TRIES>        Number of maximum retries for each target:port pair [default: 1]
     -V, --version              Print version information
+```
 
+And here are a few usage examples:
+
+```bash
+# Single target, multiple port
+./target/release/tcp_cs --targets "8.8.8.8" --ports "1-1000"
+# Scan local lan for SSH (assuming 192.168.1.0/24). In this case we reduce the
+# timeout to 500ms.
+./target/release/tcp_cs --targets "192.168.1.0/24" --ports "22" --timeout 500
+# Use a domain name as target
+./target/release/tcp_cs --targets "www.google.com" --ports "80,443"
+# Use a file as target, the file must contain a target (IP, cidr or domain name)
+# for each line
+./target/release/tcp_cs --targets "/tmp/ips.txt" --ports "1-1024"
 ```
 
 ## Docker Image
