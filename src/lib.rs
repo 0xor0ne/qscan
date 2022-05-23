@@ -18,6 +18,11 @@ use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 
+use std::fs::File;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::path::Path;
+
 use std::num::NonZeroU8;
 use std::time::Duration;
 
@@ -114,6 +119,19 @@ impl QScanner {
 
             if !parsed_addr.is_empty() {
                 ips.extend(parsed_addr);
+            } else {
+                // Check if we have a file to read addresses from
+                let file_path = Path::new(addr);
+                if !file_path.is_file() {
+                    println!("Error: not a file {:?}", addr);
+                    continue;
+                }
+
+                if let Ok(x) = QScanner::read_addresses_from_file(file_path, &alt_resolver) {
+                    ips.extend(x);
+                } else {
+                    println!("Error: unknown target {:?}", addr);
+                }
             }
         }
 
@@ -145,6 +163,26 @@ impl QScanner {
         }
 
         ips
+    }
+
+    // Read ips or fomain name from a file
+    fn read_addresses_from_file(
+        addrs_file_path: &Path,
+        backup_resolver: &Resolver,
+    ) -> Result<Vec<IpAddr>, std::io::Error> {
+        let file = File::open(addrs_file_path)?;
+        let reader = BufReader::new(file);
+        let mut ips: Vec<IpAddr> = Vec::new();
+
+        for (idx, address_line) in reader.lines().enumerate() {
+            if let Ok(address) = address_line {
+                ips.extend(QScanner::address_parse(&address, backup_resolver));
+            } else {
+                println!("Error: Line {} in file is not valid", idx);
+            }
+        }
+
+        Ok(ips)
     }
 
     /// Async TCP connect scan
@@ -260,7 +298,9 @@ mod sockiter {
         type Item = SocketAddr;
 
         fn next(&mut self) -> Option<Self::Item> {
-            self.prod.next().map(|(port, ip)| SocketAddr::new(*ip, *port))
+            self.prod
+                .next()
+                .map(|(port, ip)| SocketAddr::new(*ip, *port))
         }
     }
 }

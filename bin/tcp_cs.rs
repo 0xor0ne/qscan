@@ -23,23 +23,41 @@ use tokio::runtime::Runtime;
 struct Args {
     #[clap(
         long,
-        help = "Target to scan (comma separated). E.g., '8.8.8.8', '192.168.1.0/24', 'www.google.com'"
+        help = "Comma separated list of targets to scan. \
+        A target can be an IP, a set of IPs in CIDR notation, a domain name \
+        or a path to a file containing one of the previous for each line. \
+        E.g., '8.8.8.8', '192.168.1.0/24', 'www.google.com,/tmp/ips.txt'"
     )]
     targets: String,
 
-    #[clap(long, help = "Ports to scan for each ip. E.g., '80', '1-1024'")]
+    #[clap(
+        long,
+        help = "Comma separate list of ports (or port ranges) to scan for each target. \
+           E.g., '80', '22,443', '1-1024,8080'"
+    )]
     ports: String,
 
     #[clap(long, default_value_t = 5000, help = "Parallel scan")]
     batch: u16,
 
-    #[clap(long, default_value_t = 1000, help = "Timeout in ms")]
+    #[clap(
+        long,
+        default_value_t = 1500,
+        help = "Timeout in ms. If the timeout expires the port is considered close"
+    )]
     timeout: u64,
 
-    #[clap(long, default_value_t = 1, help = "#re-tries")]
+    #[clap(
+        long,
+        default_value_t = 1,
+        help = "Number of maximum retries for each target:port pair"
+    )]
     tries: u8,
 
-    #[clap(long, help = "Do not print open ports as soon as they are found")]
+    #[clap(
+        long,
+        help = "Print open ports at the end of the scan and not as soon as they are found"
+    )]
     nortprint: bool,
 }
 
