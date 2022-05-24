@@ -41,13 +41,13 @@ RUN useradd -ms /bin/bash ${user} && \
 # Add new user to sudoers file without password
 RUN echo "${user} ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
-COPY target/x86_64-unknown-linux-gnu/release/tcp_cs /bin/tcp_cs
+COPY qsc /bin/qsc
 
 USER ${user}
 WORKDIR /home/${user}/
 ENV LC_ALL en_US.UTF-8
 ENV TERM xterm-256color
 
-ENTRYPOINT ["/bin/tcp_cs"]
+ENTRYPOINT ["/bin/qsc"]
 
 
