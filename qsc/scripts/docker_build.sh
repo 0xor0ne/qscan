@@ -17,20 +17,22 @@
 
 # Get script actual directory
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-ROOT_DIR=${SCRIPT_DIR}/..
+ROOT_DIR=${SCRIPT_DIR}/../..
 
-DOCKFILE=${ROOT_DIR}/Dockerfile
+DOCKFILE=${ROOT_DIR}/qsc/Dockerfile
 
 pushd .
 cd ${ROOT_DIR}
-cargo clean --target-dir target/x86_64-unknown-linux-gnu
-RUSTFLAGS='-C target-feature=+crt-static' cargo build --release \
-  --features build-binary \
-  --bin tcp_cs \
-  --target x86_64-unknown-linux-gnu
-popd
+
+cargo clean --target-dir target/x86_64-unknown-linux-musl
+./qsc/scripts/qsc_build_static.sh
+cp target/x86_64-unknown-linux-musl/release/qsc qsc/qsc
 
 docker build -f ${DOCKFILE} -t 0xor0ne/qscan \
   --build-arg user=qscan \
   --build-arg root_password=qscan-passwd \
-  ${ROOT_DIR}
+  ${ROOT_DIR}/qsc
+
+rm ${ROOT_DIR}/qsc/qsc
+
+popd
