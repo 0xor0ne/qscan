@@ -37,7 +37,7 @@ Print the help message using `-h` option:
 
 ```bash
 >>> qsc -h
-qsc 0.1.0
+qsc 0.2.0
 0xor0ne
 Quick async network scanner CLI
 
@@ -45,20 +45,28 @@ USAGE:
     qsc [OPTIONS] --targets <TARGETS> --ports <PORTS>
 
 OPTIONS:
-        --batch <BATCH>        Parallel scan [default: 5000]
-    -h, --help                 Print help information
-        --nortprint            Print open ports at the end of the scan and not as soon as they are
-                               found
-        --ports <PORTS>        Comma separate list of ports (or port ranges) to scan for each
-                               target. E.g., '80', '22,443', '1-1024,8080'
-        --targets <TARGETS>    Comma separated list of targets to scan. A target can be an IP, a set
-                               of IPs in CIDR notation, a domain name or a path to a file containing
-                               one of the previous for each line. E.g., '8.8.8.8', '192.168.1.0/24',
-                               'www.google.com,/tmp/ips.txt'
-        --timeout <TIMEOUT>    Timeout in ms. If the timeout expires the port is considered close
-                               [default: 1500]
-        --tries <TRIES>        Number of maximum retries for each target:port pair [default: 1]
-    -V, --version              Print version information
+        --batch <BATCH>              Parallel scan [default: 5000]
+    -h, --help                       Print help information
+        --ports <PORTS>              Comma separate list of ports (or port ranges) to scan for each
+                                     target. E.g., '80', '22,443', '1-1024,8080'
+        --printlevel <PRINTLEVEL>    Console output mode:
+                                       - 0: suppress console output;
+                                       - 1: print ip:port for open ports at the end of the scan;
+                                       - 2: print ip:port:<OPEN|CLOSE> at the end of the scan;
+                                       - 3: print ip:port for open ports as soon as they are found;
+                                       - 4: print ip:port:<OPEN:CLOSE> as soon as the scan for a
+                                            target ends;
+                                              [default: 3]
+        --targets <TARGETS>          Comma separated list of targets to scan. A target can be an IP,
+                                     a set of IPs in CIDR notation, a domain name or a path to a
+                                     file containing one of the previous for each line. E.g.,
+                                     '8.8.8.8', '192.168.1.0/24', 'www.google.com,/tmp/ips.txt'
+        --timeout <TIMEOUT>          Timeout in ms. If the timeout expires the port is considered
+                                     close [default: 1500]
+        --tries <TRIES>              Number of maximum retries for each target:port pair [default:
+                                     1]
+    -V, --version                    Print version information
+
 ```
 
 here are a few usage examples:
