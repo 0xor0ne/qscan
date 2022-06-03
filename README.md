@@ -36,7 +36,7 @@ For using `qscan` library put this dependency in your `Cargo.toml`:
 
 ```bash
 [dependencies]
-qscan = "0.3.3"
+qscan = "0.4.0"
 ```
 
 for more details and examples see [qscan README](./qscan/README.md).
