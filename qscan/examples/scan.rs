@@ -14,16 +14,22 @@
 // this program. If not, see <https://www.gnu.org/licenses/>.
 //
 //
-use qscan::qscanner::QScanner;
+use qscan::qscanner::{QSPrintMode, QScanTcpConnectState, QScanType, QScanner};
 use tokio::runtime::Runtime;
 
 pub fn main() {
-    let scanner = QScanner::new("8.8.8.8,127.0.0.1", "53,80,443", 5000, 2000, 1);
-    let res = Runtime::new()
-        .unwrap()
-        .block_on(scanner.scan_tcp_connect(false));
+    let mut scanner = QScanner::new("8.8.8.8,127.0.0.1", "53,80,443");
+    scanner.set_batch(5000);
+    scanner.set_timeout_ms(2000);
+    scanner.set_ntries(1);
+    scanner.set_scan_type(QScanType::TcpConnect);
+    scanner.set_print_mode(QSPrintMode::NonRealTime);
+
+    let res = Runtime::new().unwrap().block_on(scanner.scan_tcp_connect());
 
     for sa in &res {
-        println!("{}", sa);
+        if sa.state == QScanTcpConnectState::Open {
+            println!("{}", sa.target);
+        }
     }
 }

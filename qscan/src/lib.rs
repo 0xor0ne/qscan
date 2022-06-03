@@ -14,4 +14,7 @@
 // this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
+//! Asynchronous network ports scanning library
+
+/// Module for asynchronous network ports scanning
 pub mod qscanner;

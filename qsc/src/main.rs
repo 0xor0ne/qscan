@@ -13,7 +13,9 @@
 // You should have received a copy of the GNU General Public License along with
 // this program. If not, see <https://www.gnu.org/licenses/>.
 //
-use qscan::qscanner::QScanner;
+use qscan::qscanner::{
+    QSPrintMode, QScanTcpConnectResult, QScanTcpConnectState, QScanType, QScanner,
+};
 
 use clap::Parser;
 use tokio::runtime::Runtime;
@@ -56,9 +58,17 @@ struct Args {
 
     #[clap(
         long,
-        help = "Print open ports at the end of the scan and not as soon as they are found"
+        default_value_t = 3,
+        help = "Console output mode:
+  - 0: suppress console output;
+  - 1: print ip:port for open ports at the end of the scan;
+  - 2: print ip:port:<OPEN|CLOSE> at the end of the scan;
+  - 3: print ip:port for open ports as soon as they are found;
+  - 4: print ip:port:<OPEN:CLOSE> as soon as the scan for a
+       target ends;
+        "
     )]
-    nortprint: bool,
+    printlevel: u8,
 }
 
 /// Simple async tcp connect scanner
@@ -70,14 +80,39 @@ pub fn main() {
     let timeout = args.timeout;
     let tries = args.tries;
 
-    let scanner = QScanner::new(&addresses, &ports, batch, timeout, tries);
-    let res = Runtime::new()
-        .unwrap()
-        .block_on(scanner.scan_tcp_connect(!args.nortprint));
+    let mut scanner = QScanner::new(&addresses, &ports);
+    scanner.set_scan_type(QScanType::TcpConnect);
 
-    if args.nortprint {
+    scanner.set_batch(batch);
+    scanner.set_timeout_ms(timeout);
+    scanner.set_ntries(tries);
+
+    let mut no_output = false;
+
+    match args.printlevel {
+        0 => no_output = true,
+        1 | 2 => scanner.set_print_mode(QSPrintMode::NonRealTime),
+        3 => scanner.set_print_mode(QSPrintMode::RealTime),
+        4 => scanner.set_print_mode(QSPrintMode::RealTimeAll),
+        _ => {
+            panic!("Unknown print mode {} (allowed 0-4)", args.printlevel);
+        }
+    }
+
+    let res: Vec<QScanTcpConnectResult> =
+        Runtime::new().unwrap().block_on(scanner.scan_tcp_connect());
+
+    if !no_output && (args.printlevel == 1 || args.printlevel == 2) {
         for sa in &res {
-            println!("{}", sa);
+            if sa.state == QScanTcpConnectState::Open {
+                if args.printlevel == 1 {
+                    println!("{}", sa.target);
+                } else {
+                    println!("{}:OPEN", sa.target);
+                }
+            } else if args.printlevel == 2 {
+                println!("{}:CLOSED", sa.target);
+            }
         }
     }
 }
