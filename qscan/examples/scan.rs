@@ -14,7 +14,7 @@
 // this program. If not, see <https://www.gnu.org/licenses/>.
 //
 //
-use qscan::QScanner;
+use qscan::qscanner::QScanner;
 use tokio::runtime::Runtime;
 
 pub fn main() {
