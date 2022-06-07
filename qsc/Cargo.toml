@@ -1,6 +1,6 @@
 [package]
 name = "qsc"
-version = "0.2.0"
+version = "0.2.1"
 description = "Quick async network scanner CLI"
 documentation = "https://github.com/0xor0ne/qscan"
 readme = "README.md"
@@ -17,7 +17,7 @@ exclude = [
 ]
 
 [dependencies]
-qscan = { path = "../qscan", version = "0.4.0" }
+qscan = { path = "../qscan", version = "0.4.1" }
 tokio = { version = "1", features = ["rt"] }
 clap = { version = "3.1.18", features = ["derive"] }
 

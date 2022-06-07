@@ -16,5 +16,11 @@
 
 //! Asynchronous network ports scanning library
 
+pub use crate::qscanner::QSPrintMode;
+pub use crate::qscanner::QScanTcpConnectResult;
+pub use crate::qscanner::QScanTcpConnectState;
+pub use crate::qscanner::QScanType;
+pub use crate::qscanner::QScanner;
+
 /// Module for asynchronous network ports scanning
 pub mod qscanner;

@@ -19,7 +19,7 @@ Dependencies (`Cargo.toml`):
 
 ```bash
 [dependencies]
-qscan = "0.4.0"
+qscan = "0.4.1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 ```
 

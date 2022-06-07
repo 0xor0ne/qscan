@@ -14,7 +14,7 @@
 // this program. If not, see <https://www.gnu.org/licenses/>.
 //
 //
-use qscan::qscanner::{QSPrintMode, QScanTcpConnectState, QScanType, QScanner};
+use qscan::{QSPrintMode, QScanTcpConnectState, QScanType, QScanner};
 use tokio::runtime::Runtime;
 
 pub fn main() {
