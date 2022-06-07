@@ -37,7 +37,7 @@ Print the help message using `-h` option:
 
 ```bash
 >>> qsc -h
-qsc 0.2.0
+qsc 0.2.1
 0xor0ne
 Quick async network scanner CLI
 

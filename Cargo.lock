@@ -566,7 +566,7 @@ dependencies = [
 
 [[package]]
 name = "qsc"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "clap",
  "qscan",
@@ -575,7 +575,7 @@ dependencies = [
 
 [[package]]
 name = "qscan"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "cidr-utils",
  "futures",
