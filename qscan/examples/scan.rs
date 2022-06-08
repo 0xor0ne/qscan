@@ -27,7 +27,7 @@ pub fn main() {
 
     let res = Runtime::new().unwrap().block_on(scanner.scan_tcp_connect());
 
-    for sa in &res {
+    for sa in res {
         if sa.state == QScanTcpConnectState::Open {
             println!("{}", sa.target);
         }

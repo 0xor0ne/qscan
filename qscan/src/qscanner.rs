@@ -16,6 +16,11 @@
 
 use std::fmt;
 
+#[cfg(feature = "serialize")]
+use serde::ser::{Serialize, SerializeStruct, Serializer};
+#[cfg(feature = "serialize")]
+use serde_json;
+
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
@@ -101,6 +106,27 @@ struct QScanError {
 impl fmt::Display for QScanError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "QScanError: {}", self.msg)
+    }
+}
+
+#[cfg(feature = "serialize")]
+impl Serialize for QScanTcpConnectResult {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_struct("QScanTcpConnectResult", 3)?;
+        s.serialize_field("IP", &self.target.ip())?;
+        s.serialize_field("port", &self.target.port())?;
+        match self.state {
+            QScanTcpConnectState::Open => {
+                s.serialize_field("state", "OPEN")?;
+            }
+            QScanTcpConnectState::Close => {
+                s.serialize_field("state", "CLOSED")?;
+            }
+        }
+        s.end()
     }
 }
 
@@ -283,6 +309,11 @@ impl QScanner {
             .collect::<Vec<u16>>();
     }
 
+    #[cfg(feature = "serialize")]
+    pub fn get_last_results_as_json_string(&self) -> serde_json::Result<String> {
+        serde_json::to_string(&self.last_results)
+    }
+
     /// Async TCP connect scan
     ///
     /// # Return
@@ -298,8 +329,8 @@ impl QScanner {
     /// let res = Runtime::new().unwrap().block_on(scanner.scan_tcp_connect());
     /// ```
     ///
-    pub async fn scan_tcp_connect(&self) -> Vec<QScanTcpConnectResult> {
-        let mut open_soc: Vec<QScanTcpConnectResult> = Vec::new();
+    pub async fn scan_tcp_connect(&mut self) -> &Vec<QScanTcpConnectResult> {
+        let mut sock_res: Vec<QScanTcpConnectResult> = Vec::new();
         let mut sock_it: sockiter::SockIter = sockiter::SockIter::new(&self.ips, &self.ports);
         let mut ftrs = FuturesUnordered::new();
 
@@ -328,7 +359,7 @@ impl QScanner {
                         _ => {}
                     }
 
-                    open_soc.push(QScanTcpConnectResult {
+                    sock_res.push(QScanTcpConnectResult {
                         target: socket,
                         state: QScanTcpConnectState::Open,
                     });
@@ -338,7 +369,7 @@ impl QScanner {
                         println!("{}:{}:CLOSED", error.sock.ip(), error.sock.port());
                     }
 
-                    open_soc.push(QScanTcpConnectResult {
+                    sock_res.push(QScanTcpConnectResult {
                         target: error.sock,
                         state: QScanTcpConnectState::Close,
                     });
@@ -346,7 +377,9 @@ impl QScanner {
             }
         }
 
-        open_soc
+        drop(ftrs);
+        self.last_results = Some(sock_res);
+        self.last_results.as_ref().unwrap()
     }
 
     async fn scan_socket_tcp_connect(&self, socket: SocketAddr) -> Result<SocketAddr, QScanError> {

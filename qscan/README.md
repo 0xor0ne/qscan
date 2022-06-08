@@ -19,14 +19,23 @@ Dependencies (`Cargo.toml`):
 
 ```bash
 [dependencies]
-qscan = "0.4.1"
+qscan = "0.5.0"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+```
+
+Alternatively, in order enable `qscan::QScanTcpConnectResult` serialization,
+activate `serialize` feature:
+
+```bash
+[dependencies]
+qscan = { version = "0.5.0" , features = ["serialize"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 ```
 
 and then (`src/main.rs`):
 
 ```rust
-use qscan::qscanner::{QSPrintMode, QScanTcpConnectState, QScanType, QScanner};
+use qscan::{QSPrintMode, QScanTcpConnectState, QScanType, QScanner};
 use tokio::runtime::Runtime;
 
 pub fn main() {
@@ -39,7 +48,7 @@ pub fn main() {
 
     let res = Runtime::new().unwrap().block_on(scanner.scan_tcp_connect());
 
-    for sa in &res {
+    for sa in res {
         if sa.state == QScanTcpConnectState::Open {
             println!("{}", sa.target);
         }
@@ -47,4 +56,4 @@ pub fn main() {
 }
 ```
 
-See also the [provided example](./examples/scan.rs).
+See also the [provided example](./examples/scan.rs) and [qsc utility](../qsc/).

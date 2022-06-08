@@ -14,7 +14,16 @@
 // this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
+//! # QSCAN
+//!
 //! Asynchronous network ports scanning library
+//!
+//! To enable `qscan::QScanTcpConnectResult` serialization:
+//!
+//! ```text
+//! [dependencies]
+//! qscan = { path = "../qscan", version = "0.5.0" , features = ["serialize"] }
+//! ```
 
 pub use crate::qscanner::QSPrintMode;
 pub use crate::qscanner::QScanTcpConnectResult;
