@@ -24,8 +24,10 @@
 //!
 //! ## OPTIONS:
 //!
+//! ```text
 //!       --batch <BATCH>              Parallel scan [default: 5000]
 //!       -h, --help                   Print help information
+//!       --json <JSON>                Path to file whre to save results in json format
 //!       --ports <PORTS>              Comma separate list of ports (or port ranges) to scan for each
 //!                                    target. E.g., '80', '22,443', '1-1024,8080'
 //!       --printlevel <PRINTLEVEL>    Console output mode:
@@ -45,6 +47,11 @@
 //!       --tries <TRIES>              Number of maximum retries for each target:port pair [default:
 //!                                    1]
 //!       -V, --version                    Print version information
+//! ```
+
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
 
 use qscan::{QSPrintMode, QScanTcpConnectResult, QScanTcpConnectState, QScanType, QScanner};
 
@@ -101,6 +108,9 @@ struct Args {
         "
     )]
     printlevel: u8,
+
+    #[clap(long, help = "Path to file whre to save results in json format")]
+    json: Option<PathBuf>,
 }
 
 /// Simple async tcp connect scanner
@@ -112,6 +122,18 @@ pub fn main() {
     let batch = args.batch;
     let timeout = args.timeout;
     let tries = args.tries;
+    let mut jf: Option<File> = None;
+
+    if args.json.is_some() {
+        jf = if let Ok(f) = File::create(&args.json.as_ref().unwrap().as_path()) {
+            Some(f)
+        } else {
+            panic!(
+                "Cannot create file {}",
+                args.json.unwrap().to_str().unwrap()
+            );
+        }
+    }
 
     let mut scanner = QScanner::new(&addresses, &ports);
     scanner.set_scan_type(QScanType::TcpConnect);
@@ -132,11 +154,11 @@ pub fn main() {
         }
     }
 
-    let res: Vec<QScanTcpConnectResult> =
+    let res: &Vec<QScanTcpConnectResult> =
         Runtime::new().unwrap().block_on(scanner.scan_tcp_connect());
 
     if !no_output && (args.printlevel == 1 || args.printlevel == 2) {
-        for sa in &res {
+        for sa in res {
             if sa.state == QScanTcpConnectState::Open {
                 if args.printlevel == 1 {
                     println!("{}", sa.target);
@@ -146,6 +168,17 @@ pub fn main() {
             } else if args.printlevel == 2 {
                 println!("{}:CLOSED", sa.target);
             }
+        }
+    }
+
+    if let Some(mut f) = jf {
+        let j = scanner.get_last_results_as_json_string().unwrap();
+        if let Err(e) = f.write_all(j.as_bytes()) {
+            eprintln!(
+                "Error writing json results in {}: {}",
+                args.json.unwrap().to_str().unwrap(),
+                e
+            );
         }
     }
 }

@@ -37,7 +37,7 @@ Print the help message using `-h` option:
 
 ```bash
 >>> qsc -h
-qsc 0.2.1
+qsc 0.3.0
 0xor0ne
 Quick async network scanner CLI
 
@@ -47,6 +47,7 @@ USAGE:
 OPTIONS:
         --batch <BATCH>              Parallel scan [default: 5000]
     -h, --help                       Print help information
+        --json <JSON>                Path to file whre to save results in json format
         --ports <PORTS>              Comma separate list of ports (or port ranges) to scan for each
                                      target. E.g., '80', '22,443', '1-1024,8080'
         --printlevel <PRINTLEVEL>    Console output mode:
@@ -82,6 +83,9 @@ qsc --targets "www.google.com" --ports "80,443"
 # Use a file as target, the file must contain a target (IP, cidr or domain name)
 # for each line
 qsc --targets "/tmp/ips.txt" --ports "1-1024"
+# Print all the ports with OPEN/CLOSED indication and save results in json
+# format in file /tmp/res.json
+qsc --targets "8.8.8.8" --ports 80,443,111 --tries 1 --json /tmp/xxx.json --printlevel 4
 ```
 
 ## Docker Image
