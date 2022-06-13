@@ -26,6 +26,9 @@
 //! ```
 
 pub use crate::qscanner::QSPrintMode;
+pub use crate::qscanner::QScanPingResult;
+pub use crate::qscanner::QScanPingState;
+pub use crate::qscanner::QScanResult;
 pub use crate::qscanner::QScanTcpConnectResult;
 pub use crate::qscanner::QScanTcpConnectState;
 pub use crate::qscanner::QScanType;

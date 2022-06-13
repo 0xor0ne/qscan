@@ -36,6 +36,7 @@ use std::time::Duration;
 use tokio::io;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
+use tokio::time;
 use tokio::time::error::Elapsed;
 use tokio::time::timeout;
 
@@ -56,7 +57,7 @@ use trust_dns_resolver::{
 #[derive(Debug)]
 pub enum QScanType {
     TcpConnect,
-    // Ping, future release
+    Ping,
 }
 
 /// Printing mode while scanning
@@ -80,7 +81,16 @@ pub struct QScanner {
     batch: u16,
     to: Duration,
     tries: NonZeroU8,
-    last_results: Option<Vec<QScanTcpConnectResult>>,
+    ping_payload: Vec<u8>,
+    ping_interval: Duration,
+    last_results: Option<Vec<QScanResult>>,
+}
+
+/// Possible states of a TCP connect target
+#[derive(Debug)]
+pub enum QScanResult {
+    TcpConnect(QScanTcpConnectResult),
+    Ping(QScanPingResult),
 }
 
 /// Possible states of a TCP connect target
@@ -95,6 +105,20 @@ pub enum QScanTcpConnectState {
 pub struct QScanTcpConnectResult {
     pub target: SocketAddr,
     pub state: QScanTcpConnectState,
+}
+
+/// Possible states of a Ping scan taret
+#[derive(Debug, PartialEq)]
+pub enum QScanPingState {
+    Up,
+    Down,
+}
+
+/// Result of a ping Scan for a single target
+#[derive(Debug)]
+pub struct QScanPingResult {
+    pub target: IpAddr,
+    pub state: QScanPingState,
 }
 
 #[derive(Debug, Clone)]
@@ -123,10 +147,43 @@ impl Serialize for QScanTcpConnectResult {
                 s.serialize_field("state", "OPEN")?;
             }
             QScanTcpConnectState::Close => {
-                s.serialize_field("state", "CLOSED")?;
+                s.serialize_field("state", "CLOSE")?;
             }
         }
         s.end()
+    }
+}
+
+#[cfg(feature = "serialize")]
+impl Serialize for QScanPingResult {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_struct("QScanTcpConnectResult", 3)?;
+        s.serialize_field("IP", &self.target)?;
+        match self.state {
+            QScanPingState::Up => {
+                s.serialize_field("state", "UP")?;
+            }
+            QScanPingState::Down => {
+                s.serialize_field("state", "DOWN")?;
+            }
+        }
+        s.end()
+    }
+}
+
+#[cfg(feature = "serialize")]
+impl Serialize for QScanResult {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            QScanResult::TcpConnect(x) => x.serialize(serializer),
+            QScanResult::Ping(x) => x.serialize(serializer),
+        }
     }
 }
 
@@ -136,6 +193,7 @@ const PRINT_MODE: QSPrintMode = QSPrintMode::NonRealTime;
 const BATCH_DEF: u16 = 2500;
 const TIMEOUT_DEF: u64 = 1000;
 const TRIES_DEF: u8 = 1;
+const PING_INTERVAL_DEF: u64 = 1000;
 
 impl QScanner {
     /// Create a new QScanner
@@ -162,6 +220,8 @@ impl QScanner {
             batch: BATCH_DEF,
             to: Duration::from_millis(TIMEOUT_DEF),
             tries: NonZeroU8::new(std::cmp::max(TRIES_DEF, 1)).unwrap(),
+            ping_payload: vec![0; 56],
+            ping_interval: Duration::from_millis(PING_INTERVAL_DEF),
             last_results: None,
         }
     }
@@ -192,7 +252,17 @@ impl QScanner {
         self.tries = NonZeroU8::new(std::cmp::max(ntries, 1)).unwrap();
     }
 
-    pub fn get_last_results(&self) -> Option<&Vec<QScanTcpConnectResult>> {
+    /// Set ping payload
+    pub fn set_ping_payload(&mut self, payload: &[u8]) {
+        self.ping_payload = Vec::from(payload);
+    }
+
+    /// Set ping interval in ms
+    pub fn set_ping_interval_ms(&mut self, ping_int_ms: u64) {
+        self.ping_interval = Duration::from_millis(ping_int_ms);
+    }
+
+    pub fn get_last_results(&self) -> Option<&Vec<QScanResult>> {
         match &self.last_results {
             Some(res) => Some(res),
             None => None,
@@ -217,6 +287,26 @@ impl QScanner {
         &self.ports
     }
 
+    /// Set targets addresses. Old targets are discarded
+    ///
+    /// # Arguments
+    ///
+    /// * `addresses` - IPs string, comma separated and CIDR notation
+    ///
+    pub fn set_targets_addr(&mut self, addresses: &str) {
+        self.ips = addresses_parse(addresses);
+    }
+
+    /// Set targets port. Old targets are discarded
+    ///
+    /// # Arguments
+    ///
+    /// * `ports` - ports string, comma separated and ranges
+    ///
+    pub fn set_targets_port(&mut self, ports: &str) {
+        self.ports = ports_parse(ports);
+    }
+
     /// Set targets. Old targets are discarded
     ///
     /// # Arguments
@@ -227,6 +317,38 @@ impl QScanner {
     pub fn set_targets(&mut self, addresses: &str, ports: &str) {
         self.ips = addresses_parse(addresses);
         self.ports = ports_parse(ports);
+    }
+
+    /// Add targets addresses to existing targets
+    ///
+    /// # Arguments
+    ///
+    /// * `addresses` - IPs string, comma separated and CIDR notation
+    ///
+    pub fn add_targets_addr(&mut self, addresses: &str) {
+        self.ips.extend(addresses_parse(addresses));
+        self.ips = self
+            .ips
+            .clone()
+            .into_iter()
+            .unique()
+            .collect::<Vec<IpAddr>>();
+    }
+
+    /// Add targets (ports) to existing targets
+    ///
+    /// # Arguments
+    ///
+    /// * `ports` - ports string, comma separated and ranges
+    ///
+    pub fn add_targets_port(&mut self, ports: &str) {
+        self.ports.extend(ports_parse(ports));
+        self.ports = self
+            .ports
+            .clone()
+            .into_iter()
+            .unique()
+            .collect::<Vec<u16>>();
     }
 
     /// Add targets to existing targets
@@ -253,6 +375,43 @@ impl QScanner {
             .collect::<Vec<u16>>();
     }
 
+    /// Set targets addresses. Old targets are discarded
+    ///
+    /// # Arguments
+    ///
+    /// * `ips` - Target IPs
+    ///
+    /// # Examples
+    ///
+    ///```
+    /// use qscan::qscanner::QScanner;
+    /// use std::net::{IpAddr, Ipv4Addr};
+    /// let mut qs = QScanner::new("", "");
+    /// let target_ips = vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))];
+    /// qs.set_vec_targets_addr(target_ips);
+    /// ```
+    pub fn set_vec_targets_addr(&mut self, ips: Vec<IpAddr>) {
+        self.ips = ips;
+    }
+    /// Set targets port. Old targets are discarded
+    ///
+    /// # Arguments
+    ///
+    /// * `ports` - Target ports
+    ///
+    /// # Examples
+    ///
+    ///```
+    /// use qscan::qscanner::QScanner;
+    /// use std::net::{IpAddr, Ipv4Addr};
+    /// let mut qs = QScanner::new("", "");
+    /// let target_ports = vec![80];
+    /// qs.set_vec_targets_port(target_ports);
+    /// ```
+    pub fn set_vec_targets_port(&mut self, ports: Vec<u16>) {
+        self.ports = ports;
+    }
+
     /// Set targets. Old targets are discarded
     ///
     /// # Arguments
@@ -275,7 +434,57 @@ impl QScanner {
         self.ports = ports;
     }
 
-    /// Set targets. Old targets are discarded
+    /// Add new targets (addresses)
+    ///
+    /// # Arguments
+    ///
+    /// * `ips` - Target IPs
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use qscan::qscanner::QScanner;
+    /// use std::net::{IpAddr, Ipv4Addr};
+    /// let mut qs = QScanner::new("127.0.0.1", "80");
+    /// let target_ips = vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2))];
+    /// qs.add_vec_targets_addr(target_ips);
+    /// ```
+    pub fn add_vec_targets_addr(&mut self, ips: Vec<IpAddr>) {
+        self.ips.extend(ips);
+        self.ips = self
+            .ips
+            .clone()
+            .into_iter()
+            .unique()
+            .collect::<Vec<IpAddr>>();
+    }
+
+    /// Add new targets (port)
+    ///
+    /// # Arguments
+    ///
+    /// * `ports` - Target ports
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use qscan::qscanner::QScanner;
+    /// use std::net::{IpAddr, Ipv4Addr};
+    /// let mut qs = QScanner::new("127.0.0.1", "80");
+    /// let target_ports = vec![443];
+    /// qs.add_vec_targets_port(target_ports);
+    /// ```
+    pub fn add_vec_targets_port(&mut self, ports: Vec<u16>) {
+        self.ports.extend(ports);
+        self.ports = self
+            .ports
+            .clone()
+            .into_iter()
+            .unique()
+            .collect::<Vec<u16>>();
+    }
+
+    /// Add new targets
     ///
     /// # Arguments
     ///
@@ -325,12 +534,12 @@ impl QScanner {
     /// ```
     /// use qscan::qscanner::QScanner;
     /// use tokio::runtime::Runtime;
-    /// let scanner = QScanner::new("127.0.0.1", "80");
+    /// let mut scanner = QScanner::new("127.0.0.1", "80");
     /// let res = Runtime::new().unwrap().block_on(scanner.scan_tcp_connect());
     /// ```
     ///
-    pub async fn scan_tcp_connect(&mut self) -> &Vec<QScanTcpConnectResult> {
-        let mut sock_res: Vec<QScanTcpConnectResult> = Vec::new();
+    pub async fn scan_tcp_connect(&mut self) -> &Vec<QScanResult> {
+        let mut sock_res: Vec<QScanResult> = Vec::new();
         let mut sock_it: sockiter::SockIter = sockiter::SockIter::new(&self.ips, &self.ports);
         let mut ftrs = FuturesUnordered::new();
 
@@ -359,26 +568,88 @@ impl QScanner {
                         _ => {}
                     }
 
-                    sock_res.push(QScanTcpConnectResult {
+                    sock_res.push(QScanResult::TcpConnect(QScanTcpConnectResult {
                         target: socket,
                         state: QScanTcpConnectState::Open,
-                    });
+                    }));
                 }
                 Err(error) => {
                     if let QSPrintMode::RealTimeAll = self.print_mode {
-                        println!("{}:{}:CLOSED", error.sock.ip(), error.sock.port());
+                        println!("{}:{}:CLOSE", error.sock.ip(), error.sock.port());
                     }
 
-                    sock_res.push(QScanTcpConnectResult {
+                    sock_res.push(QScanResult::TcpConnect(QScanTcpConnectResult {
                         target: error.sock,
                         state: QScanTcpConnectState::Close,
-                    });
+                    }));
                 }
             }
         }
 
         drop(ftrs);
         self.last_results = Some(sock_res);
+        self.last_results.as_ref().unwrap()
+    }
+
+    /// TODO: add comments
+    pub async fn scan_ping(&mut self) -> &Vec<QScanResult> {
+        let client_v4 = surge_ping::Client::new(&surge_ping::Config::default())
+            .expect("Error creating ping IPv4 Client");
+        let client_v6 = surge_ping::Client::new(
+            &surge_ping::Config::builder()
+                .kind(surge_ping::ICMP::V6)
+                .build(),
+        )
+        .expect("Error creating ping IPv6 client");
+        let mut ip_res: Vec<QScanResult> = Vec::new();
+        let mut ftrs = FuturesUnordered::new();
+        let mut ip_it = self.ips.iter();
+
+        for _ in 0..self.batch {
+            if let Some(ip) = ip_it.next() {
+                ftrs.push(self.scan_ip_ping(*ip, &client_v4, &client_v6));
+            } else {
+                break;
+            }
+        }
+
+        while let Some(result) = ftrs.next().await {
+            if let Some(ip) = ip_it.next() {
+                ftrs.push(self.scan_ip_ping(*ip, &client_v4, &client_v6));
+            }
+
+            match result {
+                Ok(ip) => {
+                    match self.print_mode {
+                        QSPrintMode::RealTime => {
+                            println!("{}", ip);
+                        }
+                        QSPrintMode::RealTimeAll => {
+                            println!("{}:UP", ip);
+                        }
+                        _ => {}
+                    }
+
+                    ip_res.push(QScanResult::Ping(QScanPingResult {
+                        target: ip,
+                        state: QScanPingState::Up,
+                    }));
+                }
+                Err(ip) => {
+                    if let QSPrintMode::RealTimeAll = self.print_mode {
+                        println!("{}:DOWN", ip);
+                    }
+
+                    ip_res.push(QScanResult::Ping(QScanPingResult {
+                        target: ip,
+                        state: QScanPingState::Down,
+                    }));
+                }
+            }
+        }
+
+        drop(ftrs);
+        self.last_results = Some(ip_res);
         self.last_results.as_ref().unwrap()
     }
 
@@ -430,9 +701,51 @@ impl QScanner {
         unreachable!();
     }
 
+    async fn scan_ip_ping(
+        &self,
+        ip: IpAddr,
+        client4: &surge_ping::Client,
+        client6: &surge_ping::Client,
+    ) -> Result<IpAddr, IpAddr> {
+        let mut client = client4;
+
+        if ip.is_ipv6() {
+            client = client6;
+        }
+
+        match self.ping(client, ip).await {
+            QScanPingState::Up => Ok(ip),
+            QScanPingState::Down => Err(ip),
+        }
+    }
+
     async fn tcp_connect(&self, socket: SocketAddr) -> Result<io::Result<TcpStream>, Elapsed> {
         // See https://stackoverflow.com/questions/30022084/how-do-i-set-connect-timeout-on-tcpstream
         timeout(self.to, TcpStream::connect(socket)).await
+    }
+
+    async fn ping(&self, client: &surge_ping::Client, addr: IpAddr) -> QScanPingState {
+        let mut pinger = client
+            .pinger(addr, surge_ping::PingIdentifier(rand::random()))
+            .await;
+        pinger.timeout(self.to);
+        let mut interval = time::interval(self.ping_interval);
+        for idx in 0..self.tries.get() {
+            match pinger
+                .ping(surge_ping::PingSequence(idx as u16), &self.ping_payload)
+                .await
+            {
+                Ok((surge_ping::IcmpPacket::V4(_), _)) => {
+                    return QScanPingState::Up;
+                }
+                Ok((surge_ping::IcmpPacket::V6(_), _)) => {
+                    return QScanPingState::Up;
+                }
+                _ => {}
+            }
+            interval.tick().await;
+        }
+        QScanPingState::Down
     }
 }
 
@@ -682,13 +995,13 @@ mod tests {
     #[test]
     fn parse_empty_port() {
         let res = super::ports_parse("");
-        assert_eq!(res, Vec::new());
+        assert_eq!(res, Vec::<u16>::new());
     }
 
     #[test]
     fn parse_commas_port() {
         let res = super::ports_parse(",,,");
-        assert_eq!(res, Vec::new());
+        assert_eq!(res, Vec::<u16>::new());
     }
 
     #[test]
@@ -795,15 +1108,17 @@ mod tests {
 
     #[test]
     fn scan_tcp_connect_google_dns() {
-        let scanner = super::QScanner::new("8.8.8.8", "53,54,55-60");
+        let mut scanner = super::QScanner::new("8.8.8.8", "53,54,55-60");
         let res = Runtime::new().unwrap().block_on(scanner.scan_tcp_connect());
 
         for r in res {
-            if r.state == super::QScanTcpConnectState::Open {
-                assert_eq!(
-                    r.target,
-                    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53)
-                );
+            if let super::QScanResult::TcpConnect(sa) = r {
+                if sa.state == super::QScanTcpConnectState::Open {
+                    assert_eq!(
+                        sa.target,
+                        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53)
+                    );
+                }
             }
         }
     }
@@ -822,5 +1137,105 @@ mod tests {
             Resolver::new(ResolverConfig::cloudflare_tls(), ResolverOpts::default()).unwrap();
         let res = super::domain_name_resolve_to_ip("www.google.com", &resolver);
         assert!(res.len() > 0);
+    }
+
+    #[test]
+    #[ignore]
+    fn scan_ping_google_dns() {
+        let mut scanner = super::QScanner::new("8.8.8.8", "");
+        scanner.set_scan_type(crate::QScanType::Ping);
+        scanner.set_ntries(5);
+        let res = Runtime::new().unwrap().block_on(scanner.scan_ping());
+
+        for r in res {
+            if let super::QScanResult::Ping(pr) = r {
+                if pr.state == super::QScanPingState::Up {
+                    assert_eq!(pr.target, IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)));
+                }
+                if pr.state == super::QScanPingState::Down {
+                    assert!(false);
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn scan_ping_localhost() {
+        let mut scanner = super::QScanner::new("127.0.0.0/24", "");
+        scanner.set_scan_type(crate::QScanType::Ping);
+        scanner.set_ntries(5);
+        scanner.set_ping_payload(&[0x41; 56]);
+        let res = Runtime::new().unwrap().block_on(scanner.scan_ping());
+        let mut up_ctr = 0;
+
+        for r in res {
+            if let super::QScanResult::Ping(pr) = r {
+                if pr.state == super::QScanPingState::Up {
+                    up_ctr += 1;
+                }
+            }
+        }
+
+        assert!(up_ctr > 0);
+    }
+
+    #[test]
+    #[ignore]
+    fn scan_ping_unreachable() {
+        let mut scanner = super::QScanner::new("169.254.101.100,8.8.8.8", "");
+        scanner.set_scan_type(crate::QScanType::Ping);
+        scanner.set_ntries(3);
+        scanner.set_timeout_ms(1000);
+        scanner.set_ping_interval_ms(500);
+        let res = Runtime::new().unwrap().block_on(scanner.scan_ping());
+
+        for r in res {
+            if let super::QScanResult::Ping(pr) = r {
+                if pr.state == super::QScanPingState::Down {
+                    assert_eq!(pr.target, IpAddr::V4(Ipv4Addr::new(169, 254, 101, 100)));
+                }
+                if pr.state == super::QScanPingState::Up {
+                    assert_eq!(pr.target, IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)));
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn scan_ping_multiple() {
+        let mut scanner = super::QScanner::new("8.8.8.8,1.1.1.1,8.8.4.4,1.0.0.1", "");
+        scanner.set_scan_type(crate::QScanType::Ping);
+        scanner.set_ntries(5);
+        let res = Runtime::new().unwrap().block_on(scanner.scan_ping());
+        let mut up_ctr = 0;
+
+        for r in res {
+            if let super::QScanResult::Ping(pr) = r {
+                if pr.target == IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)) {
+                    if pr.state == super::QScanPingState::Up {
+                        up_ctr += 1;
+                    }
+                }
+                if pr.target == IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)) {
+                    if pr.state == super::QScanPingState::Up {
+                        up_ctr += 1;
+                    }
+                }
+                if pr.target == IpAddr::V4(Ipv4Addr::new(8, 8, 4, 4)) {
+                    if pr.state == super::QScanPingState::Up {
+                        up_ctr += 1;
+                    }
+                }
+                if pr.target == IpAddr::V4(Ipv4Addr::new(1, 0, 0, 1)) {
+                    if pr.state == super::QScanPingState::Up {
+                        up_ctr += 1;
+                    }
+                }
+            }
+        }
+
+        assert_eq!(up_ctr, 4);
     }
 }

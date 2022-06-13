@@ -25,35 +25,64 @@
 //! ## OPTIONS:
 //!
 //! ```text
-//!       --batch <BATCH>              Parallel scan [default: 5000]
-//!       -h, --help                   Print help information
-//!       --json <JSON>                Path to file whre to save results in json format
-//!       --ports <PORTS>              Comma separate list of ports (or port ranges) to scan for each
-//!                                    target. E.g., '80', '22,443', '1-1024,8080'
-//!       --printlevel <PRINTLEVEL>    Console output mode:
-//!                                      - 0: suppress console output;
-//!                                      - 1: print ip:port for open ports at the end of the scan;
-//!                                      - 2: print ip:port:<OPEN|CLOSE> at the end of the scan;
-//!                                      - 3: print ip:port for open ports as soon as they are found;
-//!                                      - 4: print ip:port:<OPEN:CLOSE> as soon as the scan for a
-//!                                           target ends;
-//!                                             [default: 3]
-//!       --targets <TARGETS>          Comma separated list of targets to scan. A target can be an IP,
-//!                                    a set of IPs in CIDR notation, a domain name or a path to a
-//!                                    file containing one of the previous for each line. E.g.,
-//!                                    '8.8.8.8', '192.168.1.0/24', 'www.google.com,/tmp/ips.txt'
-//!       --timeout <TIMEOUT>          Timeout in ms. If the timeout expires the port is considered
-//!                                    close [default: 1500]
-//!       --tries <TRIES>              Number of maximum retries for each target:port pair [default:
-//!                                    1]
-//!       -V, --version                    Print version information
+//!        --batch <BATCH>
+//!            Parallel scan [default: 5000]
+//!
+//!    -h, --help
+//!            Print help information
+//!
+//!        --json <JSON>
+//!            Path to file whre to save results in json format
+//!
+//!        --mode <MODE>
+//!            Scan mode:
+//!              - 0: TCP connect;
+//!              - 1: ping (--ports is ognored);
+//!              - 2: ping and then TCP connect using as targets the nodes that replied to the ping;
+//!                     [default: 0]
+//!
+//!        --ping-interval <PING_INTERVAL>
+//!            Inteval in ms between pings for a single target. [default: 1000]
+//!
+//!        --ping-tries <PING_TRIES>
+//!            Number of maximum retries for each target (ping scan) [default: 1]
+//!
+//!        --ports <PORTS>
+//!            Comma separate list of ports (or port ranges) to scan for each target. E.g., '80',
+//!            '22,443', '1-1024,8080'
+//!
+//!        --printlevel <PRINTLEVEL>
+//!            Console output mode:
+//!              - 0: suppress console output;
+//!              - 1: print ip:port for open ports at the end of the scan;
+//!              - 2: print ip:port:<OPEN|CLOSE> at the end of the scan;
+//!              - 3: print ip:port for open ports as soon as they are found;
+//!              - 4: print ip:port:<OPEN:CLOSE> as soon as the scan for a
+//!                   target ends;
+//!                     [default: 3]
+//!
+//!        --targets <TARGETS>
+//!            Comma separated list of targets to scan. A target can be an IP, a set of IPs in CIDR
+//!            notation, a domain name or a path to a file containing one of the previous for each
+//!            line. E.g., '8.8.8.8', '192.168.1.0/24', 'www.google.com,/tmp/ips.txt'
+//!
+//!        --tcp-tries <TCP_TRIES>
+//!            Number of maximum retries for each target:port pair (TCP Connect scan) [default: 1]
+//!
+//!        --timeout <TIMEOUT>
+//!            Timeout in ms. If the timeout expires the port is considered close [default: 1500]
+//!
+//!    -V, --version
+//!            Print version information
+//!
 //! ```
 
 use std::fs::File;
 use std::io::Write;
+use std::net::IpAddr;
 use std::path::PathBuf;
 
-use qscan::{QSPrintMode, QScanTcpConnectResult, QScanTcpConnectState, QScanType, QScanner};
+use qscan::{QSPrintMode, QScanPingState, QScanResult, QScanTcpConnectState, QScanType, QScanner};
 
 use clap::Parser;
 use tokio::runtime::Runtime;
@@ -90,10 +119,24 @@ struct Args {
 
     #[clap(
         long,
-        default_value_t = 1,
-        help = "Number of maximum retries for each target:port pair"
+        default_value_t = 1000,
+        help = "Inteval in ms between pings for a single target."
     )]
-    tries: u8,
+    ping_interval: u64,
+
+    #[clap(
+        long,
+        default_value_t = 1,
+        help = "Number of maximum retries for each target:port pair (TCP Connect scan)"
+    )]
+    tcp_tries: u8,
+
+    #[clap(
+        long,
+        default_value_t = 1,
+        help = "Number of maximum retries for each target (ping scan)"
+    )]
+    ping_tries: u8,
 
     #[clap(
         long,
@@ -109,19 +152,93 @@ struct Args {
     )]
     printlevel: u8,
 
+    #[clap(
+        long,
+        default_value_t = 0,
+        help = "Scan mode:
+  - 0: TCP connect;
+  - 1: ping (--ports is ognored);
+  - 2: ping and then TCP connect using as targets the nodes that replied to the ping;
+        "
+    )]
+    mode: u8,
+
     #[clap(long, help = "Path to file whre to save results in json format")]
     json: Option<PathBuf>,
 }
 
+#[doc(hidden)]
+fn do_tcp_connect_scan_and_print(scanner: &mut QScanner, args: &Args) {
+    scanner.set_scan_type(QScanType::TcpConnect);
+    scanner.set_ntries(args.tcp_tries);
+    set_print_level(scanner, args);
+    let res: &Vec<QScanResult> = Runtime::new().unwrap().block_on(scanner.scan_tcp_connect());
+
+    if (args.printlevel == 0) && (args.printlevel == 1 || args.printlevel == 2) {
+        for r in res {
+            if let QScanResult::TcpConnect(sa) = r {
+                if sa.state == QScanTcpConnectState::Open {
+                    if args.printlevel == 1 {
+                        println!("{}", sa.target);
+                    } else {
+                        println!("{}:OPEN", sa.target);
+                    }
+                } else if args.printlevel == 2 {
+                    println!("{}:CLOSED", sa.target);
+                }
+            }
+        }
+    }
+}
+
+#[doc(hidden)]
+fn do_ping_scan<'a>(scanner: &'a mut QScanner, args: &Args) -> &'a Vec<QScanResult> {
+    scanner.set_scan_type(QScanType::Ping);
+    scanner.set_ntries(args.ping_tries);
+    scanner.set_ping_interval_ms(args.ping_interval);
+    Runtime::new().unwrap().block_on(scanner.scan_ping())
+}
+
+#[doc(hidden)]
+fn do_ping_scan_and_print(scanner: &mut QScanner, args: &Args) {
+    set_print_level(scanner, args);
+    let res: &Vec<QScanResult> = do_ping_scan(scanner, args);
+
+    if (args.printlevel == 0) && (args.printlevel == 1 || args.printlevel == 2) {
+        for r in res {
+            if let QScanResult::Ping(pr) = r {
+                if pr.state == QScanPingState::Up {
+                    if args.printlevel == 1 {
+                        println!("{}", pr.target);
+                    } else {
+                        println!("{}:UP", pr.target);
+                    }
+                } else if args.printlevel == 2 {
+                    println!("{}:DOWN", pr.target);
+                }
+            }
+        }
+    }
+}
+
+#[doc(hidden)]
+fn set_print_level(scanner: &mut QScanner, args: &Args) {
+    match args.printlevel {
+        1 | 2 => scanner.set_print_mode(QSPrintMode::NonRealTime),
+        3 => scanner.set_print_mode(QSPrintMode::RealTime),
+        4 => scanner.set_print_mode(QSPrintMode::RealTimeAll),
+        _ => {
+            panic!("Unknown print mode {} (allowed 0-4)", args.printlevel);
+        }
+    }
+}
+
 /// Simple async tcp connect scanner
 #[doc(hidden)]
-pub fn main() {
+fn main() {
     let args = Args::parse();
-    let addresses = args.targets;
-    let ports = args.ports;
     let batch = args.batch;
     let timeout = args.timeout;
-    let tries = args.tries;
     let mut jf: Option<File> = None;
 
     if args.json.is_some() {
@@ -135,40 +252,32 @@ pub fn main() {
         }
     }
 
-    let mut scanner = QScanner::new(&addresses, &ports);
-    scanner.set_scan_type(QScanType::TcpConnect);
+    let mut scanner = QScanner::new(&args.targets, &args.ports);
 
     scanner.set_batch(batch);
     scanner.set_timeout_ms(timeout);
-    scanner.set_ntries(tries);
 
-    let mut no_output = false;
+    match args.mode {
+        0 => do_tcp_connect_scan_and_print(&mut scanner, &args),
+        1 => do_ping_scan_and_print(&mut scanner, &args),
+        2 => {
+            scanner.set_print_mode(QSPrintMode::NonRealTime);
+            let res: &Vec<QScanResult> = do_ping_scan(&mut scanner, &args);
 
-    match args.printlevel {
-        0 => no_output = true,
-        1 | 2 => scanner.set_print_mode(QSPrintMode::NonRealTime),
-        3 => scanner.set_print_mode(QSPrintMode::RealTime),
-        4 => scanner.set_print_mode(QSPrintMode::RealTimeAll),
-        _ => {
-            panic!("Unknown print mode {} (allowed 0-4)", args.printlevel);
-        }
-    }
+            let mut ips_up: Vec<IpAddr> = Vec::new();
 
-    let res: &Vec<QScanTcpConnectResult> =
-        Runtime::new().unwrap().block_on(scanner.scan_tcp_connect());
-
-    if !no_output && (args.printlevel == 1 || args.printlevel == 2) {
-        for sa in res {
-            if sa.state == QScanTcpConnectState::Open {
-                if args.printlevel == 1 {
-                    println!("{}", sa.target);
-                } else {
-                    println!("{}:OPEN", sa.target);
+            for r in res {
+                if let QScanResult::Ping(pr) = r {
+                    if let QScanPingState::Up = pr.state {
+                        ips_up.push(pr.target);
+                    }
                 }
-            } else if args.printlevel == 2 {
-                println!("{}:CLOSED", sa.target);
             }
+
+            scanner.set_vec_targets_addr(ips_up);
+            do_tcp_connect_scan_and_print(&mut scanner, &args);
         }
+        _ => panic!("Unknown scan mode {}", args.mode),
     }
 
     if let Some(mut f) = jf {
