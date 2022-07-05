@@ -37,7 +37,7 @@
 //!        --mode <MODE>
 //!            Scan mode:
 //!              - 0: TCP connect;
-//!              - 1: ping (--ports is ognored);
+//!              - 1: ping (--ports is ignored);
 //!              - 2: ping and then TCP connect using as targets the nodes that replied to the ping;
 //!                     [default: 0]
 //!
@@ -86,6 +86,11 @@ use qscan::{QSPrintMode, QScanPingState, QScanResult, QScanTcpConnectState, QSca
 
 use clap::Parser;
 use tokio::runtime::Runtime;
+
+#[cfg(target_os = "linux")]
+#[cfg(not(debug_assertions))]
+#[cfg(feature="debugoff")]
+use debugoff;
 
 #[derive(Parser, Debug)]
 #[doc(hidden)]
@@ -157,7 +162,7 @@ struct Args {
         default_value_t = 0,
         help = "Scan mode:
   - 0: TCP connect;
-  - 1: ping (--ports is ognored);
+  - 1: ping (--ports is ignored);
   - 2: ping and then TCP connect using as targets the nodes that replied to the ping;
         "
     )]
@@ -236,6 +241,11 @@ fn set_print_level(scanner: &mut QScanner, args: &Args) {
 /// Simple async tcp connect scanner
 #[doc(hidden)]
 fn main() {
+    #[cfg(target_os = "linux")]
+    #[cfg(not(debug_assertions))]
+    #[cfg(feature="debugoff")]
+    debugoff::multi_ptraceme_or_die();
+
     let args = Args::parse();
     let batch = args.batch;
     let timeout = args.timeout;
@@ -256,6 +266,11 @@ fn main() {
 
     scanner.set_batch(batch);
     scanner.set_timeout_ms(timeout);
+
+    #[cfg(target_os = "linux")]
+    #[cfg(not(debug_assertions))]
+    #[cfg(feature="debugoff")]
+    debugoff::multi_ptraceme_or_die();
 
     match args.mode {
         0 => do_tcp_connect_scan_and_print(&mut scanner, &args),
