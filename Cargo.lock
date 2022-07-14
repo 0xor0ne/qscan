@@ -169,9 +169,9 @@ checksum = "f578e8e2c440e7297e008bb5486a3a8a194775224bbc23729b0dbdfaeebf162e"
 
 [[package]]
 name = "debugoff"
-version = "0.1.1"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abb8ed73e967dbb7780a698d92b0531c1197f7f476e6b9415329aaa3ef26d273"
+checksum = "829721489ead262d9fbb1f0585d6781d5e5afebf41e6c604f00836e772324b66"
 dependencies = [
  "const-random",
  "crunchy",
@@ -696,7 +696,7 @@ dependencies = [
 
 [[package]]
 name = "qsc"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "clap",
  "debugoff",
