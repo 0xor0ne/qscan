@@ -1,6 +1,6 @@
 [package]
 name = "qsc"
-version = "0.4.2"
+version = "0.4.3"
 description = "Quick async network scanner CLI"
 documentation = "https://github.com/0xor0ne/qscan"
 readme = "README.md"
@@ -20,7 +20,7 @@ exclude = [
 qscan = { path = "../qscan", version = "0.6.0" , features = ["serialize"] }
 tokio = { version = "1", features = ["rt"] }
 clap = { version = "3.1.18", features = ["derive"] }
-debugoff = { version = "0.2.1", features = ["obfuscate", "syscallobf"], optional = true }
+debugoff = { version = "0.2.2", features = ["obfuscate", "syscallobf"], optional = true }
 
 [features]
 dbgoff = ["debugoff"]
